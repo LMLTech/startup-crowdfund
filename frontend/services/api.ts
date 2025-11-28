@@ -1,46 +1,89 @@
-// API Service Layer
-// This file handles all API calls to the Java Spring Boot backend
-// Base URL should be configured in environment variables
+/// <reference types="vite/client" />
+import axios from 'axios';
 
+let mockInvestments: any[] = [];
+let mockPendingProjects: any[] = [];
+let mockProjects: any[] = [];
+let mockUsers: any[] = [];
+
+// ==================== MOCK MODE SWITCH - CHỈ THÊM ĐOẠN NÀY ====================
+const USE_MOCK = (() => {
+  const val = import.meta.env.VITE_USE_MOCK;
+  return (typeof val === 'boolean' && val) || (typeof val === 'string' && val.trim().toLowerCase() === 'true');
+})();
+
+// FIX MOCK DATA LOADING - CHỈ THÊM ĐOẠN NÀY
+let mockDataPromise: Promise<any> | null = null;
+if (USE_MOCK) {
+  mockDataPromise = import('../utils/mockData').then(module => {
+    mockProjects = module.mockProjects || [];
+    mockPendingProjects = module.mockPendingProjects || [];
+    mockUsers = module.mockUsers || [];
+    mockInvestments = module.mockInvestments || [];
+    console.log('%c MOCK DATA ĐÃ LOAD XONG – SẴN SÀNG CHIẾN!', 'color: #10b981; font-size: 16px; font-weight: bold;');
+  });
+}
+const awaitMockData = async () => {
+  if (USE_MOCK && mockDataPromise) await mockDataPromise;
+};
+
+const delay = (ms = 500) => new Promise(r => setTimeout(r, ms));
+
+// API Service Layer - Đã sửa khớp với Backend StarFund
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
 // Helper function to get auth token
 const getAuthToken = (): string | null => {
-  const user = localStorage.getItem('currentUser');
+  const user = localStorage.getItem('user');
   if (user) {
     const userData = JSON.parse(user);
-    return userData.token || null;
+    // Backend trả về token nằm cùng cấp với user trong object login response, 
+    // hoặc bạn đã lưu riêng key 'token' ở useAuth.
+    return localStorage.getItem('token') || userData.token;
   }
   return null;
 };
 
 // Helper function to create headers
-const createHeaders = (includeAuth = true): HeadersInit => {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  
+const createHeaders = (includeAuth = true, isMultipart = false): HeadersInit => {
+  const headers: any = {};
+
+  if (!isMultipart) {
+    headers['Content-Type'] = 'application/json';
+    headers['Accept'] = 'application/json';
+  }
+
   if (includeAuth) {
     const token = getAuthToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
   }
-  
+
   return headers;
 };
+
 
 // Helper function to handle responses
 const handleResponse = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'An error occurred' }));
+    // Nếu lỗi 401 (Unauthorized) -> Token hết hạn -> Clear storage & Redirect
+    if (response.status === 401) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+    }
     throw new Error(error.message || `HTTP error! status: ${response.status}`);
   }
-  return response.json();
+  const resData = await response.json();
+  // Backend trả về dạng { success: true, message: "...", data: ... }
+  // Ta trả về data để component sử dụng
+  return resData.data !== undefined ? resData.data : resData; 
 };
 
 // ============================================
-// AUTHENTICATION APIs
+// DEFINITIONS (Interfaces) - PHẦN BẠN ĐANG THIẾU
 // ============================================
 
 export interface LoginRequest {
@@ -52,7 +95,7 @@ export interface RegisterRequest {
   email: string;
   password: string;
   name: string;
-  role: 'investor' | 'startup';
+  role: string;
   company?: string;
   phone?: string;
 }
@@ -63,136 +106,296 @@ export interface AuthResponse {
   name: string;
   role: string;
   token: string;
+  status?: string;
   company?: string;
   phone?: string;
 }
 
+export interface Project {
+  id: number;
+  title: string;
+  description: string;
+  fullDescription?: string;
+  category: string;
+  targetAmount: number;
+  currentAmount: number;
+  investorCount: number;
+  daysLeft: number;
+  status: string;
+  image: string;
+  imageUrl?: string; // Support real API url
+  tags?: any[];
+  milestones?: any[];
+  startupName?: string;
+  founderName?: string;
+  founderEmail?: string;
+  createdAt: string;
+  submittedAt?: string;
+  founder?: {
+      id: number;
+      name: string;
+      company?: string;
+      email: string;
+  };
+}
+
+export interface Investment {
+  id: number;
+  amount: number;
+  status: string;
+  paymentMethod: string;
+  createdAt: string;
+  transactionCode?: string;
+  transactionId?: string; // Support mock
+  projectTitle?: string; // Support mock
+  project?: {
+      id: number;
+      title: string;
+  };
+  investorName?: string;
+  user?: {
+      name: string;
+  }
+}
+
+export interface Transaction {
+    id: number;
+    transactionCode: string;
+    amount: number;
+    type: string;
+    status: string;
+    paymentMethod: string;
+    createdAt: string;
+    user?: {
+        name: string;
+        email: string;
+    };
+    investment?: {
+        project?: {
+            title: string;
+        }
+    };
+    description?: string;
+}
+
+// ============================================
+// AUTHENTICATION APIs
+// ============================================
 export const authAPI = {
-  login: async (data: LoginRequest): Promise<AuthResponse> => {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: createHeaders(false),
-      body: JSON.stringify(data),
-    });
-    return handleResponse<AuthResponse>(response);
-  },
+  login: async (data: LoginRequest) => {
+  if (USE_MOCK) {
+    await awaitMockData();
+    await delay(800);
+    const user = mockUsers.find(u => u.email === data.email && u.password === data.password);
+    if (!user) throw new Error('Sai email hoặc mật khẩu!');
+    const { password: _, ...safeUser } = user;
+    localStorage.setItem('user', JSON.stringify(safeUser));
+    localStorage.setItem('token', 'mock-jwt-starfund-2025');
+    return { user: safeUser, token: 'mock-jwt-starfund-2025' };
+  }
 
-  register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: createHeaders(false),
-      body: JSON.stringify(data),
-    });
-    return handleResponse<AuthResponse>(response);
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+  method: 'POST',
+  headers: {
+    "Content-Type": "application/json",
+    "Accept": "application/json"
   },
+  body: JSON.stringify(data),
+});
+  return handleResponse<{user: AuthResponse, token: string}>(response);
+},
 
-  getCurrentUser: async (): Promise<AuthResponse> => {
+  getCurrentUser: async () => {
     const response = await fetch(`${API_BASE_URL}/auth/me`, {
       headers: createHeaders(),
     });
     return handleResponse<AuthResponse>(response);
+  },
+
+  // THÊM VÀO TRONG authAPI (ngay dưới login hoặc getCurrentUser)
+  register: async (data: RegisterRequest) => {
+    if (USE_MOCK) {
+      await awaitMockData();
+      await delay(800);
+      
+      // Mock register
+      const safeUser = {
+        id: Date.now(),
+        email: data.email,
+        name: data.name,
+        role: data.role.toUpperCase(),
+        phone: data.phone,
+        company: data.company,
+        status: 'ACTIVE'
+      };
+      mockUsers.push({ ...safeUser, password: data.password });
+      
+      localStorage.setItem('user', JSON.stringify(safeUser));
+      localStorage.setItem('token', 'mock-jwt-register-' + Date.now());
+      
+      return { user: safeUser, token: 'mock-jwt-register-' + Date.now() };
+    }
+
+    // GỌI THẬT TỚI BACKEND
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+
+    return handleResponse<{ user: AuthResponse; token: string }>(response);
   },
 };
 
 // ============================================
 // PROJECT APIs
 // ============================================
-
-export interface Project {
-  id: number;
-  title: string;
-  description: string;
-  fullDescription: string;
-  category: string;
-  targetAmount: number;
-  currentAmount: number;
-  investorCount: number;
-  daysLeft: number;
-  startupName: string;
-  founderId: number;
-  founderName: string;
-  founderEmail: string;
-  status: 'pending' | 'approved' | 'rejected' | 'active' | 'completed';
-  image: string;
-  tags: string[];
-  createdAt: string;
-  approvedAt?: string;
-  rejectedAt?: string;
-  reviewFeedback?: string;
-}
-
-export interface CreateProjectRequest {
-  title: string;
-  description: string;
-  fullDescription: string;
-  category: string;
-  targetAmount: number;
-  daysLeft: number;
-  image: string;
-  tags: string[];
-  milestones?: Array<{
-    title: string;
-    description: string;
-    amount: number;
-  }>;
-}
-
 export const projectAPI = {
-  // Get all approved projects (public)
-  getApprovedProjects: async (): Promise<Project[]> => {
-    const response = await fetch(`${API_BASE_URL}/projects/approved`, {
-      headers: createHeaders(false),
-    });
-    return handleResponse<Project[]>(response);
-  },
+  // Public: Get Approved Projects
+// Thay thế hàm getApprovedProjects trong projectAPI
 
-  // Get pending projects (CVA only)
-  getPendingProjects: async (): Promise<Project[]> => {
-    const response = await fetch(`${API_BASE_URL}/projects/pending`, {
+getApprovedProjects: async (page = 1, limit = 12, search = '', category = '') => {
+  if (USE_MOCK) {
+    await awaitMockData();
+    await delay(600);
+    let projects = mockProjects.filter(p => p.status === 'approved');
+    if (search) {
+      projects = projects.filter(p =>
+        p.title.toLowerCase().includes(search.toLowerCase()) ||
+        p.description.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    if (category && category !== 'all') {
+      projects = projects.filter(p => p.category === category);
+    }
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    
+    // Trả về format giống backend
+    return {
+      data: projects.slice(start, end),
+      pagination: {
+        total: projects.length,
+        page,
+        limit,
+        totalPages: Math.ceil(projects.length / limit)
+      }
+    };
+  }
+
+  // REAL API
+  let url = `${API_BASE_URL}/projects?status=approved&page=${page}&limit=${limit}`;
+  if(search) url += `&search=${encodeURIComponent(search)}`;
+  if(category && category !== 'all') url += `&category=${encodeURIComponent(category)}`;
+  
+  const response = await fetch(url, { headers: createHeaders(false) });
+  const result = await handleResponse<any>(response);
+  
+  // FIX: Backend trả về Page object, extract content array
+  // result có thể là: { content: [...], totalElements, totalPages } 
+  // hoặc trực tiếp array (nếu backend trả khác)
+  
+  if (result && result.content && Array.isArray(result.content)) {
+    // Spring Page format
+    return {
+      data: result.content,
+      pagination: {
+        total: result.totalElements || result.content.length,
+        page: result.number + 1 || page, // Spring Page index bắt đầu từ 0
+        limit: result.size || limit,
+        totalPages: result.totalPages || 1
+      }
+    };
+  } else if (Array.isArray(result)) {
+    // Nếu backend trả trực tiếp array
+    return {
+      data: result,
+      pagination: { total: result.length, page, limit, totalPages: 1 }
+    };
+  } else {
+    // Fallback
+    console.warn('Unexpected API response format:', result);
+    return { data: [], pagination: null };
+  }
+},
+
+  // Detail
+  getProjectById: async (id: number) => {
+  if (USE_MOCK) {
+    await awaitMockData();
+    await delay(500);
+    const project = [...mockProjects, ...mockPendingProjects].find(p => p.id === id);
+    if (!project) throw new Error('Không tìm thấy dự án');
+    return project;
+  }
+  const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
+    headers: createHeaders(false),
+  });
+  return handleResponse<Project>(response);
+},
+getProjectsByStatus: async (status: string, page = 1, limit = 12) => {
+  if (USE_MOCK) {
+    await awaitMockData();
+    await delay(600);
+    
+    // Lọc theo status (chuyển về lowercase để so sánh)
+    let projects = status.toLowerCase() === 'pending' 
+      ? mockPendingProjects 
+      : mockProjects.filter(p => p.status?.toLowerCase() === status.toLowerCase());
+    
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    
+    return {
+      content: projects.slice(start, end),
+      totalElements: projects.length,
+      totalPages: Math.ceil(projects.length / limit),
+      currentPage: page
+    };
+  }
+
+  // GỌI API THẬT
+  const response = await fetch(
+    `${API_BASE_URL}/projects?status=${status}&page=${page}&limit=${limit}`, 
+    { headers: createHeaders(true) } // TRUE vì cần auth
+  );
+  
+  return handleResponse<any>(response);
+},
+  // Startup: Get My Projects
+  getMyProjects: async () => {
+    const response = await fetch(`${API_BASE_URL}/projects/my-projects`, {
       headers: createHeaders(),
     });
     return handleResponse<Project[]>(response);
   },
 
-  // Get project by ID
-  getProjectById: async (id: number): Promise<Project> => {
-    const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
-      headers: createHeaders(false),
-    });
-    return handleResponse<Project>(response);
-  },
-
-  // Get projects by founder
-  getProjectsByFounder: async (founderId: number): Promise<Project[]> => {
-    const response = await fetch(`${API_BASE_URL}/projects/founder/${founderId}`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<Project[]>(response);
-  },
-
-  // Create new project (startup only)
-  createProject: async (data: CreateProjectRequest): Promise<Project> => {
+  // Create (Multipart Form Data)
+  createProject: async (formData: FormData) => {
     const response = await fetch(`${API_BASE_URL}/projects`, {
       method: 'POST',
-      headers: createHeaders(),
-      body: JSON.stringify(data),
+      headers: createHeaders(true, true), // isMultipart = true
+      body: formData,
     });
     return handleResponse<Project>(response);
   },
 
-  // Update project (startup only)
-  updateProject: async (id: number, data: Partial<CreateProjectRequest>): Promise<Project> => {
+  // Update
+  updateProject: async (id: number, formData: FormData) => {
     const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
       method: 'PUT',
-      headers: createHeaders(),
-      body: JSON.stringify(data),
+      headers: createHeaders(true, true),
+      body: formData,
     });
     return handleResponse<Project>(response);
   },
 
-  // Approve project (CVA only)
-  approveProject: async (id: number, feedback?: string): Promise<Project> => {
-    const response = await fetch(`${API_BASE_URL}/projects/${id}/approve`, {
+  // Approve (CVA)
+  approveProject: async (id: number, feedback: string) => {
+    const response = await fetch(`${API_BASE_URL}/cva/projects/${id}/approve`, {
       method: 'POST',
       headers: createHeaders(),
       body: JSON.stringify({ feedback }),
@@ -200,9 +403,9 @@ export const projectAPI = {
     return handleResponse<Project>(response);
   },
 
-  // Reject project (CVA only)
-  rejectProject: async (id: number, feedback: string): Promise<Project> => {
-    const response = await fetch(`${API_BASE_URL}/projects/${id}/reject`, {
+  // Reject (CVA)
+  rejectProject: async (id: number, feedback: string) => {
+    const response = await fetch(`${API_BASE_URL}/cva/projects/${id}/reject`, {
       method: 'POST',
       headers: createHeaders(),
       body: JSON.stringify({ feedback }),
@@ -210,253 +413,142 @@ export const projectAPI = {
     return handleResponse<Project>(response);
   },
 
-  // Delete project (admin only)
-  deleteProject: async (id: number): Promise<void> => {
+  deleteProject: async (id: number) => {
     const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
       method: 'DELETE',
       headers: createHeaders(),
     });
-    if (!response.ok) {
-      throw new Error('Failed to delete project');
-    }
-  },
-
-  // Search projects
-  searchProjects: async (query: string): Promise<Project[]> => {
-    const response = await fetch(`${API_BASE_URL}/projects/search?q=${encodeURIComponent(query)}`, {
-      headers: createHeaders(false),
-    });
-    return handleResponse<Project[]>(response);
+    return handleResponse(response);
   },
 };
 
 // ============================================
 // INVESTMENT APIs
 // ============================================
-
-export interface Investment {
-  id: number;
-  projectId: number;
-  projectTitle: string;
-  investorId: number;
-  investorName: string;
-  amount: number;
-  paymentMethod: string;
-  status: 'pending' | 'completed' | 'failed';
-  createdAt: string;
-  completedAt?: string;
-}
-
-export interface CreateInvestmentRequest {
-  projectId: number;
-  amount: number;
-  paymentMethod: string;
-}
-
 export const investmentAPI = {
-  // Create investment
-  createInvestment: async (data: CreateInvestmentRequest): Promise<Investment> => {
+  // Create investment -> Get Payment URL
+  createInvestment: async (data: { projectId: number; amount: number; message: string; paymentMethod: string }) => {
     const response = await fetch(`${API_BASE_URL}/investments`, {
       method: 'POST',
       headers: createHeaders(),
       body: JSON.stringify(data),
     });
-    return handleResponse<Investment>(response);
+    // Return format: { paymentUrl: "..." }
+    return handleResponse<{
+      data: any;paymentUrl: string
+}>(response);
   },
 
-  // Get investments by investor
-  getInvestmentsByInvestor: async (investorId: number): Promise<Investment[]> => {
-    const response = await fetch(`${API_BASE_URL}/investments/investor/${investorId}`, {
+  // Investor: Get My History
+  getMyInvestments: async () => {
+    const response = await fetch(`${API_BASE_URL}/investments/my-investments`, {
       headers: createHeaders(),
     });
     return handleResponse<Investment[]>(response);
   },
 
-  // Get investments by project
-  getInvestmentsByProject: async (projectId: number): Promise<Investment[]> => {
+  // Founder: Get Investors of Project
+  getProjectInvestments: async (projectId: number) => {
     const response = await fetch(`${API_BASE_URL}/investments/project/${projectId}`, {
       headers: createHeaders(),
     });
     return handleResponse<Investment[]>(response);
   },
-
-  // Get investment by ID
-  getInvestmentById: async (id: number): Promise<Investment> => {
-    const response = await fetch(`${API_BASE_URL}/investments/${id}`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<Investment>(response);
-  },
 };
 
 // ============================================
-// TRANSACTION APIs
+// TRANSACTION APIs (Admin Only)
 // ============================================
-
-export interface Transaction {
-  id: number;
-  investmentId: number;
-  amount: number;
-  type: 'investment' | 'withdrawal' | 'refund';
-  status: 'pending' | 'completed' | 'failed';
-  paymentMethod: string;
-  vnpayTransactionId?: string;
-  createdAt: string;
-  completedAt?: string;
-}
-
 export const transactionAPI = {
-  // Get all transactions (admin only)
-  getAllTransactions: async (): Promise<Transaction[]> => {
-    const response = await fetch(`${API_BASE_URL}/transactions`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<Transaction[]>(response);
-  },
-
-  // Get transaction by ID
-  getTransactionById: async (id: number): Promise<Transaction> => {
-    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<Transaction>(response);
-  },
-
-  // Get transactions by user
-  getTransactionsByUser: async (userId: number): Promise<Transaction[]> => {
-    const response = await fetch(`${API_BASE_URL}/transactions/user/${userId}`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<Transaction[]>(response);
+  getAllTransactions: async (page = 1, userId?: number) => {
+    let url = `${API_BASE_URL}/admin/transactions?page=${page}`;
+    if (userId) url += `&userId=${userId}`;
+    
+    const response = await fetch(url, { headers: createHeaders() });
+    return handleResponse<any>(response); // Return Page<Transaction>
   },
 };
 
 // ============================================
-// USER APIs (Admin)
+// USER APIs (Admin Only)
 // ============================================
-
-export interface User {
-  id: number;
-  email: string;
-  name: string;
-  role: string;
-  company?: string;
-  phone?: string;
-  status: 'active' | 'inactive' | 'banned';
-  createdAt: string;
-}
-
 export const userAPI = {
-  // Get all users (admin only)
-  getAllUsers: async (): Promise<User[]> => {
-    const response = await fetch(`${API_BASE_URL}/users`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<User[]>(response);
+  getAllUsers: async (page = 1, role?: string) => {
+    let url = `${API_BASE_URL}/admin/users?page=${page}`;
+    if (role) url += `&role=${role}`;
+
+    const response = await fetch(url, { headers: createHeaders() });
+    return handleResponse<any>(response); // Return Page<User>
   },
 
-  // Get user by ID (admin only)
-  getUserById: async (id: number): Promise<User> => {
-    const response = await fetch(`${API_BASE_URL}/users/${id}`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<User>(response);
-  },
-
-  // Update user status (admin only)
-  updateUserStatus: async (id: number, status: 'active' | 'inactive' | 'banned'): Promise<User> => {
-    const response = await fetch(`${API_BASE_URL}/users/${id}/status`, {
+  updateUserStatus: async (id: number, status: string) => {
+    const response = await fetch(`${API_BASE_URL}/admin/users/${id}/status`, {
       method: 'PUT',
       headers: createHeaders(),
       body: JSON.stringify({ status }),
     });
-    return handleResponse<User>(response);
+    return handleResponse(response);
   },
 
-  // Delete user (admin only)
-  deleteUser: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE_URL}/users/${id}`, {
+  deleteUser: async (id: number) => {
+    const response = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
       method: 'DELETE',
       headers: createHeaders(),
     });
-    if (!response.ok) {
-      throw new Error('Failed to delete user');
-    }
+    return handleResponse(response);
   },
 };
 
 // ============================================
 // STATISTICS APIs
 // ============================================
-
-export interface Statistics {
-  totalProjects: number;
-  totalInvestments: number;
-  totalInvestors: number;
-  totalStartups: number;
-  totalFunding: number;
-  pendingProjects: number;
-  approvedProjects: number;
-  rejectedProjects: number;
-}
-
 export const statisticsAPI = {
-  // Get overall statistics
-  getOverallStatistics: async (): Promise<Statistics> => {
-    const response = await fetch(`${API_BASE_URL}/statistics/overall`, {
-      headers: createHeaders(),
-    });
-    return handleResponse<Statistics>(response);
-  },
-
-  // Get investor statistics
-  getInvestorStatistics: async (investorId: number): Promise<any> => {
-    const response = await fetch(`${API_BASE_URL}/statistics/investor/${investorId}`, {
-      headers: createHeaders(),
-    });
+  getAdminStats: async () => {
+    const response = await fetch(`${API_BASE_URL}/stats/admin-dashboard`, { headers: createHeaders() });
     return handleResponse<any>(response);
   },
 
-  // Get startup statistics
-  getStartupStatistics: async (founderId: number): Promise<any> => {
-    const response = await fetch(`${API_BASE_URL}/statistics/startup/${founderId}`, {
-      headers: createHeaders(),
-    });
+  getInvestorStats: async () => {
+    const response = await fetch(`${API_BASE_URL}/stats/investor-dashboard`, { headers: createHeaders() });
+    return handleResponse<any>(response);
+  },
+
+  getStartupStats: async () => {
+    const response = await fetch(`${API_BASE_URL}/stats/startup-dashboard`, { headers: createHeaders() });
+    return handleResponse<any>(response);
+  },
+  
+  getCvaStats: async () => {
+    const response = await fetch(`${API_BASE_URL}/stats/cva-dashboard`, { headers: createHeaders() });
     return handleResponse<any>(response);
   },
 };
 
+// notificationAPI.ts
 // ============================================
-// VNPAY Payment APIs
+// NOTIFICATION APIs
 // ============================================
-
-export interface VNPayRequest {
-  amount: number;
-  investmentId: number;
-  returnUrl: string;
-}
-
-export interface VNPayResponse {
-  paymentUrl: string;
-}
-
-export const vnpayAPI = {
-  // Create payment URL
-  createPaymentUrl: async (data: VNPayRequest): Promise<VNPayResponse> => {
-    const response = await fetch(`${API_BASE_URL}/payment/vnpay/create`, {
-      method: 'POST',
+export const notificationAPI = {
+  getMyNotifications: async () => {
+    const response = await fetch(`${API_BASE_URL}/notifications`, {
       headers: createHeaders(),
-      body: JSON.stringify(data),
     });
-    return handleResponse<VNPayResponse>(response);
+    return handleResponse<any>(response);
   },
 
-  // Verify payment callback
-  verifyPayment: async (queryParams: string): Promise<{ success: boolean; message: string }> => {
-    const response = await fetch(`${API_BASE_URL}/payment/vnpay/callback?${queryParams}`, {
+  countUnread: async () => {
+    const response = await fetch(`${API_BASE_URL}/notifications/unread-count`, {
       headers: createHeaders(),
     });
-    return handleResponse<{ success: boolean; message: string }>(response);
+    return handleResponse<{count: number}>(response);
+  },
+
+  markAllAsRead: async () => {
+    const response = await fetch(`${API_BASE_URL}/notifications/mark-read`, {
+      method: 'PUT',
+      headers: createHeaders(),
+    });
+    return handleResponse(response);
   },
 };
 
@@ -467,5 +559,27 @@ export default {
   transaction: transactionAPI,
   user: userAPI,
   statistics: statisticsAPI,
-  vnpay: vnpayAPI,
+  notification: notificationAPI, // <-- thêm dòng này
 };
+
+// fileUrl helper
+export const getFileUrl = (fileName: string) => {
+  if (!fileName) return '';
+  return `${API_BASE_URL}/uploads/${fileName}`;
+};
+
+export interface Project {
+  id: number;
+  title: string;
+  description: string;
+  fullDescription?: string;
+  category: string;
+  targetAmount: number;
+  currentAmount: number;
+  investorCount: number;
+  daysLeft: number;
+  status: string;
+  image: string;       // file name từ backend
+  imageUrl?: string;   // URL đầy đủ
+}
+

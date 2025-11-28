@@ -1,20 +1,22 @@
 import { useState, useEffect } from 'react';
 import { authAPI, LoginRequest, RegisterRequest, AuthResponse } from '../services/api';
 
+// Kiểm tra chế độ Mock
+const IS_MOCK_MODE = (import.meta as any).env.VITE_USE_MOCK === 'true';
+
 export const useAuth = () => {
   const [currentUser, setCurrentUser] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load user from localStorage on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
+    // Key lưu trữ: Mock dùng 'currentUser', Real dùng 'user' -> Thống nhất dùng 'user'
+    const savedUser = localStorage.getItem('user'); 
     if (savedUser) {
       try {
         setCurrentUser(JSON.parse(savedUser));
       } catch (err) {
-        console.error('Failed to parse saved user:', err);
-        localStorage.removeItem('currentUser');
+        localStorage.removeItem('user');
       }
     }
   }, []);
@@ -22,41 +24,39 @@ export const useAuth = () => {
   const login = async (credentials: LoginRequest) => {
     setLoading(true);
     setError(null);
-    
     try {
-      // In development, use mock data
-      if (import.meta.env.MODE === 'development' && !import.meta.env.VITE_API_BASE_URL) {
-        // Mock login
-        const mockUsers = [
-          { id: 1, email: 'admin@test.com', password: 'admin@123', name: 'Admin User', role: 'admin' },
-          { id: 2, email: 'cva@test.com', password: 'cva123', name: 'CVA Member', role: 'cva' },
-          { id: 3, email: 'investor@test.com', password: '123456', name: 'Nhà Đầu Tư', role: 'investor' },
-          { id: 4, email: 'startup@test.com', password: '123456', name: 'Founder', role: 'startup', company: 'Startup ABC' },
-        ];
-
-        const user = mockUsers.find(u => u.email === credentials.email && u.password === credentials.password);
+      if (IS_MOCK_MODE) {
+        // --- MOCK LOGIN ---
+        await new Promise(resolve => setTimeout(resolve, 500)); // Giả lập delay
         
-        if (!user) {
-          throw new Error('Email hoặc mật khẩu không đúng');
-        }
-
-        const authResponse: AuthResponse = {
-          ...user,
-          token: 'mock-jwt-token-' + user.id,
+        // Hardcode mock user để test
+        const mockUser: AuthResponse = {
+            id: 1,
+            email: credentials.email,
+            name: 'Mock User',
+            role: credentials.email.includes('admin') ? 'ADMIN' : 'INVESTOR',
+            token: 'mock-token-123',
+            status: 'ACTIVE'
         };
+        
+        // Giả lập check password đơn giản
+        if (credentials.password !== '123456') throw new Error('Sai mật khẩu mock (dùng 123456)');
 
-        setCurrentUser(authResponse);
-        localStorage.setItem('currentUser', JSON.stringify(authResponse));
+        setCurrentUser(mockUser);
+        localStorage.setItem('user', JSON.stringify(mockUser));
+        localStorage.setItem('token', mockUser.token);
         setLoading(false);
-        return authResponse;
-      }
+        return { user: mockUser, token: mockUser.token };
 
-      // Real API call
-      const response = await authAPI.login(credentials);
-      setCurrentUser(response);
-      localStorage.setItem('currentUser', JSON.stringify(response));
-      setLoading(false);
-      return response;
+      } else {
+        // --- REAL API LOGIN ---
+        const data = await authAPI.login(credentials);
+        setCurrentUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('token', data.token);
+        setLoading(false);
+        return data;
+      }
     } catch (err: any) {
       setError(err.message || 'Đăng nhập thất bại');
       setLoading(false);
@@ -67,33 +67,35 @@ export const useAuth = () => {
   const register = async (data: RegisterRequest) => {
     setLoading(true);
     setError(null);
-    
     try {
-      // In development, use mock data
-      if (import.meta.env.MODE === 'development' && !import.meta.env.VITE_API_BASE_URL) {
-        // Mock registration
+      if (IS_MOCK_MODE) {
+        // --- MOCK REGISTER ---
+        await new Promise(resolve => setTimeout(resolve, 500));
         const newUser: AuthResponse = {
-          id: Date.now(),
-          email: data.email,
-          name: data.name,
-          role: data.role,
-          company: data.company,
-          phone: data.phone,
-          token: 'mock-jwt-token-' + Date.now(),
+            id: Date.now(),
+            email: data.email,
+            name: data.name,
+            role: data.role.toUpperCase(),
+            token: 'mock-token-' + Date.now(),
+            status: 'ACTIVE'
         };
-
         setCurrentUser(newUser);
-        localStorage.setItem('currentUser', JSON.stringify(newUser));
+        localStorage.setItem('user', JSON.stringify(newUser));
+        localStorage.setItem('token', newUser.token);
         setLoading(false);
-        return newUser;
-      }
+        return { user: newUser, token: newUser.token };
 
-      // Real API call
-      const response = await authAPI.register(data);
-      setCurrentUser(response);
-      localStorage.setItem('currentUser', JSON.stringify(response));
-      setLoading(false);
-      return response;
+      } else {
+        // --- REAL API REGISTER ---
+        const response = await (authAPI as any).register(data);
+        if (response.user && response.token) {
+          setCurrentUser(response.user);
+          localStorage.setItem('user', JSON.stringify(response.user));
+          localStorage.setItem('token', response.token);
+        }
+        setLoading(false);
+        return response;
+      }
     } catch (err: any) {
       setError(err.message || 'Đăng ký thất bại');
       setLoading(false);
@@ -103,27 +105,9 @@ export const useAuth = () => {
 
   const logout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('currentUser');
-  };
-
-  const getCurrentUser = async () => {
-    if (!currentUser) return null;
-    
-    try {
-      // In development with mock, return cached user
-      if (import.meta.env.MODE === 'development' && !import.meta.env.VITE_API_BASE_URL) {
-        return currentUser;
-      }
-
-      // Real API call to refresh user data
-      const response = await authAPI.getCurrentUser();
-      setCurrentUser(response);
-      localStorage.setItem('currentUser', JSON.stringify(response));
-      return response;
-    } catch (err: any) {
-      console.error('Failed to get current user:', err);
-      return currentUser;
-    }
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    window.location.href = '/login';
   };
 
   return {
@@ -133,7 +117,7 @@ export const useAuth = () => {
     login,
     register,
     logout,
-    getCurrentUser,
     isAuthenticated: !!currentUser,
+    isMockMode: IS_MOCK_MODE
   };
 };

@@ -1,63 +1,141 @@
-import { ArrowLeft, Search, Download, Filter, Calendar } from 'lucide-react';
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Search, Download, Calendar } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
-import { getInvestmentsByUserId, formatCurrency } from '../../utils/mockData';
 import { toast } from 'sonner';
 
-export default function InvestmentHistory({ currentUser, onNavigate, onLogout }) {
+// Import Mock & API (Logic File 1)
+import { getInvestmentsByUserId, formatCurrency as mockFormatCurrency } from '../../utils/mockData';
+import { investmentAPI } from '../../services/api';
+
+const IS_MOCK_MODE = (import.meta as any).env.VITE_USE_MOCK === 'true';
+
+interface InvestmentHistoryProps {
+  currentUser: any;
+  onNavigate: (path: string, data?: any) => void;
+  onLogout: () => void;
+}
+
+export default function InvestmentHistory({ currentUser, onNavigate, onLogout }: InvestmentHistoryProps) {
+  // --- PHẦN LOGIC (GIỮ NGUYÊN TỪ FILE 1) ---
+  const [investments, setInvestments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
 
-  const investments = getInvestmentsByUserId(currentUser?.id || 1);
+  // Hàm xử lý ngày tháng an toàn (Logic File 1)
+  const safeDate = (dateString: any) => {
+    try {
+        if (!dateString) return 'N/A';
+        if (Array.isArray(dateString)) {
+            const [y, m, d, h, min, s] = dateString;
+            return new Date(y, m - 1, d, h || 0, min || 0, s || 0).toLocaleDateString('vi-VN', {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+        }
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'N/A';
+        return date.toLocaleDateString('vi-VN', {
+            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+    } catch (e) {
+        return 'N/A';
+    }
+  };
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setLoading(true);
+      try {
+        if (IS_MOCK_MODE) {
+          console.log("⚠️ Investment History: MOCK MODE");
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const mockData = getInvestmentsByUserId(currentUser?.id || 1);
+          setInvestments(mockData || []);
+        } else {
+          // GỌI API THẬT (Logic File 1)
+          const data = await investmentAPI.getMyInvestments();
+          const list = Array.isArray(data) ? data : (data as any).content || [];
+          setInvestments(list);
+        }
+      } catch (error) {
+        console.error("Lỗi tải lịch sử:", error);
+        toast.error("Không thể tải lịch sử đầu tư");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, [currentUser]);
+
+  const formatMoney = (amount: number) => {
+    if (!amount) return '0 ₫';
+    if (IS_MOCK_MODE) return mockFormatCurrency(amount);
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  };
 
   const filteredInvestments = investments
     .filter(inv => {
-      const matchesSearch = inv.projectTitle.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = filterStatus === 'all' || inv.status === filterStatus;
+      const title = inv.projectTitle || inv.project?.title || 'Dự án không tên';
+      const matchesSearch = title.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const status = (inv.status || '').toLowerCase();
+      const filter = filterStatus.toLowerCase();
+      const matchesStatus = filterStatus === 'all' || status === filter;
+      
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
-      if (sortBy === 'oldest') return new Date(a.createdAt) - new Date(b.createdAt);
-      if (sortBy === 'amount-high') return b.amount - a.amount;
-      if (sortBy === 'amount-low') return a.amount - b.amount;
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      
+      if (sortBy === 'newest') return timeB - timeA;
+      if (sortBy === 'oldest') return timeA - timeB;
+      if (sortBy === 'amount-high') return (b.amount || 0) - (a.amount || 0);
+      if (sortBy === 'amount-low') return (a.amount || 0) - (b.amount || 0);
       return 0;
     });
 
-  const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0);
+  const totalInvested = investments.reduce((sum, inv) => sum + (inv.amount || 0), 0);
 
-  const handleExport = () => {
-    toast.success('Đang xuất dữ liệu...');
-    // In production, this would generate a CSV or PDF file
+  // Helper Badge (Logic File 1 + Style File 2)
+  const getStatusBadge = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s === 'success' || s === 'completed') return <Badge className="bg-green-500/20 text-green-400 border-0">Thành công</Badge>;
+    if (s === 'pending') return <Badge className="bg-yellow-500/20 text-yellow-400 border-0">Đang xử lý</Badge>;
+    if (s === 'failed') return <Badge className="bg-red-500/20 text-red-400 border-0">Thất bại</Badge>;
+    return <Badge className="bg-gray-500/20 text-gray-400 border-0">{status}</Badge>;
   };
 
+  const handleExport = () => {
+    toast.success("Đang xuất dữ liệu...");
+  };
+
+  // --- PHẦN GIAO DIỆN (UI TỪ FILE 2 - Layout w-3/4 mx-auto) ---
   return (
     <div className="min-h-screen">
       <Navbar currentUser={currentUser} onNavigate={onNavigate} onLogout={onLogout} />
 
-      <div className="pt-24 pb-20 px-4">
-        <div className="container mx-auto max-w-7xl">
-          {/* Header */}
+      <div className="pt-24 pb-20 px-4 mb-4">
+        <div className="w-3/4 px-10 mx-auto max-w-7xl">
+          
+          {/* Header Section */}
           <div className="mb-8">
-            <Button
-              variant="ghost"
-              onClick={() => onNavigate('investor-dashboard')}
-              className="mb-4 text-white hover:bg-white/10"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Quay lại Dashboard
-            </Button>
-
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-4xl text-white mb-2">Lịch sử đầu tư</h1>
+                <h1 className="text-xl text-white mb-2 font-semibold">
+                  Lịch sử đầu tư
+                </h1>
                 <p className="text-white/70">
-                  Tổng: {formatCurrency(totalInvested)} từ {investments.length} giao dịch
+                  {loading 
+                    ? "Đang tải..." 
+                    : `Tổng: ${formatMoney(totalInvested)} từ ${filteredInvestments.length} giao dịch`
+                  }
                 </p>
               </div>
               <Button
@@ -71,11 +149,11 @@ export default function InvestmentHistory({ currentUser, onNavigate, onLogout })
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20 mb-8">
+          {/* Filters - Style File 2 */}
+          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-6 border border-white/20 mb-8">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="md:col-span-2 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                 <Input
                   type="text"
                   placeholder="Tìm kiếm theo tên dự án..."
@@ -112,8 +190,11 @@ export default function InvestmentHistory({ currentUser, onNavigate, onLogout })
           </div>
 
           {/* Investments Table */}
-          {filteredInvestments.length > 0 ? (
-            <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 overflow-hidden">
+          {loading ? (
+             <div className="text-center text-white py-12 animate-pulse">Đang tải lịch sử giao dịch...</div>
+          ) : filteredInvestments.length > 0 ? (
+            <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 overflow-hidden">
+              
               {/* Desktop Table */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full">
@@ -131,84 +212,40 @@ export default function InvestmentHistory({ currentUser, onNavigate, onLogout })
                     {filteredInvestments.map((investment) => (
                       <tr key={investment.id} className="border-b border-white/10 hover:bg-white/5 transition-colors">
                         <td className="p-4 text-white/70 font-mono text-sm">
-                          {investment.transactionId}
+                          {investment.transactionId || investment.transactionCode || `#${investment.id}`}
                         </td>
                         <td className="p-4 text-white max-w-xs">
-                          <p className="line-clamp-2">{investment.projectTitle}</p>
+                          <p className="line-clamp-2">{investment.projectTitle || investment.project?.title || 'Dự án không tên'}</p>
                         </td>
-                        <td className="p-4 text-white">
-                          {formatCurrency(investment.amount)}
-                        </td>
-                        <td className="p-4 text-white/70">
-                          {investment.paymentMethod}
-                        </td>
-                        <td className="p-4 text-white/70">
-                          {new Date(investment.createdAt).toLocaleDateString('vi-VN', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </td>
-                        <td className="p-4">
-                          <Badge
-                            className={
-                              investment.status === 'success'
-                                ? 'bg-green-500/20 text-green-400 border-0'
-                                : investment.status === 'pending'
-                                ? 'bg-yellow-500/20 text-yellow-400 border-0'
-                                : 'bg-red-500/20 text-red-400 border-0'
-                            }
-                          >
-                            {investment.status === 'success'
-                              ? 'Thành công'
-                              : investment.status === 'pending'
-                              ? 'Đang xử lý'
-                              : 'Thất bại'}
-                          </Badge>
-                        </td>
+                        <td className="p-4 text-white font-medium">{formatMoney(investment.amount)}</td>
+                        <td className="p-4 text-white/70">{investment.paymentMethod || 'VNPAY'}</td>
+                        <td className="p-4 text-white/70">{safeDate(investment.createdAt)}</td>
+                        <td className="p-4">{getStatusBadge(investment.status)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* Mobile Cards */}
+              {/* Mobile Cards (Giữ lại để responsive tốt hơn) */}
               <div className="md:hidden divide-y divide-white/10">
                 {filteredInvestments.map((investment) => (
                   <div key={investment.id} className="p-4 hover:bg-white/5">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <p className="text-white mb-1">{investment.projectTitle}</p>
-                        <p className="text-white/70 text-sm font-mono">
-                          {investment.transactionId}
-                        </p>
+                        <p className="text-white mb-1">{investment.projectTitle || investment.project?.title}</p>
+                        <p className="text-white/70 text-sm font-mono">{investment.transactionId || investment.transactionCode}</p>
                       </div>
-                      <Badge
-                        className={
-                          investment.status === 'success'
-                            ? 'bg-green-500/20 text-green-400 border-0'
-                            : 'bg-yellow-500/20 text-yellow-400 border-0'
-                        }
-                      >
-                        {investment.status === 'success' ? 'Thành công' : 'Đang xử lý'}
-                      </Badge>
+                      {getStatusBadge(investment.status)}
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
                         <p className="text-white/70">Số tiền</p>
-                        <p className="text-white">{formatCurrency(investment.amount)}</p>
+                        <p className="text-white">{formatMoney(investment.amount)}</p>
                       </div>
                       <div>
-                        <p className="text-white/70">Phương thức</p>
-                        <p className="text-white">{investment.paymentMethod}</p>
-                      </div>
-                      <div className="col-span-2">
                         <p className="text-white/70">Ngày đầu tư</p>
-                        <p className="text-white">
-                          {new Date(investment.createdAt).toLocaleDateString('vi-VN')}
-                        </p>
+                        <p className="text-white">{safeDate(investment.createdAt)}</p>
                       </div>
                     </div>
                   </div>
@@ -219,11 +256,7 @@ export default function InvestmentHistory({ currentUser, onNavigate, onLogout })
             <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-12 border border-white/20 text-center">
               <Calendar className="w-16 h-16 text-white/30 mx-auto mb-4" />
               <h3 className="text-xl text-white mb-2">Không tìm thấy giao dịch</h3>
-              <p className="text-white/70">
-                {investments.length === 0
-                  ? 'Bạn chưa có khoản đầu tư nào'
-                  : 'Thử thay đổi bộ lọc để xem kết quả khác'}
-              </p>
+              <p className="text-white/70">Bạn chưa có khoản đầu tư nào.</p>
             </div>
           )}
         </div>

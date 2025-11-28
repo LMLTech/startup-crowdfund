@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Toaster } from './components/ui/sonner';
 import SpaceBackground from './components/SpaceBackground';
+
+// Public Pages
 import HomePage from './pages/public/HomePage';
 import LoginPage from './pages/public/LoginPage';
 import RegisterPage from './pages/public/RegisterPage';
@@ -34,68 +36,75 @@ import UserManagement from './pages/admin/UserManagement';
 import ProjectManagement from './pages/admin/ProjectManagement';
 import TransactionManagement from './pages/admin/TransactionManagement';
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState('home');
-  const [currentUser, setCurrentUser] = useState(null);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [selectedBlog, setSelectedBlog] = useState(null);
+// Import Types
+import { AuthResponse } from './services/api';
 
-  // Load user from localStorage on mount
+export default function App() {
+  const [currentPage, setCurrentPage] = useState<string>('home');
+  const [currentUser, setCurrentUser] = useState<AuthResponse | null>(null);
+  
+  // Dùng any cho data để linh hoạt, tránh xung đột kiểu Project/Blog
+  const [selectedProject, setSelectedProject] = useState<any>(null);
+  const [selectedBlog, setSelectedBlog] = useState<any>(null);
+
+  // Load user from localStorage
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
+    const savedUser = localStorage.getItem('user'); // Dùng key 'user' thống nhất
     if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (err) {
+        localStorage.removeItem('user');
+      }
     }
   }, []);
 
-  const handleLogin = (user) => {
+  const handleLogin = (user: AuthResponse) => {
     setCurrentUser(user);
-    localStorage.setItem('currentUser', JSON.stringify(user));
+    // Lưu ý: Auth Service đã lưu localStorage rồi
     
-    // Redirect based on role
-    if (user.role === 'investor') {
-      setCurrentPage('investor-dashboard');
-    } else if (user.role === 'startup') {
-      setCurrentPage('startup-dashboard');
-    } else if (user.role === 'cva') {
-      setCurrentPage('cva-dashboard');
-    } else if (user.role === 'admin') {
-      setCurrentPage('admin-dashboard');
-    }
+    const role = (user.role || '').toLowerCase();
+    if (role === 'investor') setCurrentPage('investor-dashboard');
+    else if (role === 'startup') setCurrentPage('startup-dashboard');
+    else if (role === 'cva') setCurrentPage('cva-dashboard');
+    else if (role === 'admin') setCurrentPage('admin-dashboard');
+    else setCurrentPage('home');
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
     setCurrentPage('home');
   };
 
-  const handleRegister = (user) => {
+  const handleRegister = (user: AuthResponse) => {
     setCurrentUser(user);
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    
-    // Redirect based on role
-    if (user.role === 'investor') {
-      setCurrentPage('home');
-    } else if (user.role === 'startup') {
-      setCurrentPage('startup-dashboard');
-    }
+    const role = (user.role || '').toLowerCase();
+    if (role === 'investor') setCurrentPage('home');
+    else if (role === 'startup') setCurrentPage('startup-dashboard');
   };
 
-  const navigateTo = (page, data = null) => {
+  // Định nghĩa hàm navigateTo chuẩn, chấp nhận mọi kiểu data
+  const navigateTo = (page: string, data?: any) => {
     setCurrentPage(page);
+    window.scrollTo(0, 0);
+
     if (data) {
-      if (page === 'project-detail' || page === 'review-detail' || page === 'edit-project' || page === 'payment') {
+      if (['project-detail', 'review-detail', 'edit-project', 'payment'].includes(page)) {
         setSelectedProject(data);
       } else if (page === 'blog-detail') {
         setSelectedBlog(data);
       }
+    } else {
+      // Clear data khi chuyển trang không cần data
+      // setSelectedProject(null); // Tùy chọn: có thể giữ lại để back
     }
   };
 
   const renderPage = () => {
     switch (currentPage) {
-      // Public Pages
+      // --- Public Pages ---
       case 'home':
         return <HomePage currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       case 'login':
@@ -114,10 +123,13 @@ export default function App() {
         return <ContactPage currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       case 'blog':
         return <BlogPage currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
-      case 'blog-detail':
-        return <BlogDetailPage blog={selectedBlog} currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
+      case 'blog-detail': {
+        // Fix lỗi truyền props cho BlogDetail (cast component to any to satisfy prop types)
+        const BlogDetailComponent: any = BlogDetailPage;
+        return <BlogDetailComponent blog={selectedBlog} currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
+      }
       
-      // Investor Pages
+      // --- Investor Pages ---
       case 'investor-dashboard':
         return <InvestorDashboard currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       case 'investment-history':
@@ -125,7 +137,7 @@ export default function App() {
       case 'payment':
         return <PaymentPage project={selectedProject} currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       
-      // Startup Pages
+      // --- Startup Pages ---
       case 'startup-dashboard':
         return <StartupDashboard currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       case 'create-project':
@@ -135,7 +147,7 @@ export default function App() {
       case 'edit-project':
         return <EditProject project={selectedProject} currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       
-      // CVA Pages
+      // --- CVA Pages ---
       case 'cva-dashboard':
         return <CVADashboard currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       case 'review-projects':
@@ -143,7 +155,7 @@ export default function App() {
       case 'review-detail':
         return <ReviewDetail project={selectedProject} currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       
-      // Admin Pages
+      // --- Admin Pages ---
       case 'admin-dashboard':
         return <AdminDashboard currentUser={currentUser} onNavigate={navigateTo} onLogout={handleLogout} />;
       case 'user-management':
@@ -159,12 +171,15 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <SpaceBackground />
-      <div className="relative z-10">
-        {renderPage()}
-      </div>
-      <Toaster position="top-right" />
+  <div className="relative min-h-screen overflow-hidden">
+    <SpaceBackground />
+
+    {/* Toàn bộ UI nằm trên nền */}
+    <div className="relative z-10">
+      {renderPage()}
     </div>
-  );
+
+    <Toaster position="top-right" />
+  </div>
+);
 }

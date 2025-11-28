@@ -1,16 +1,37 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
-import { formatCurrency } from '../../utils/mockData';
 import { toast } from 'sonner';
 
-export default function ReviewDetail({ project, currentUser, onNavigate, onLogout }) {
+// Import Mock Helper
+import { formatCurrency as mockFormatCurrency } from '../../utils/mockData';
+// Import Real API
+import { projectAPI } from '../../services/api';
+
+// Kiểm tra chế độ
+const IS_MOCK_MODE = (import.meta as any).env.VITE_USE_MOCK === 'true';
+
+// 1. Interface Props
+interface ReviewDetailProps {
+  project: any; // Hoặc import interface Project từ api.ts
+  currentUser: any;
+  onNavigate: (path: string, data?: any) => void;
+  onLogout: () => void;
+}
+
+export default function ReviewDetail({ project, currentUser, onNavigate, onLogout }: ReviewDetailProps) {
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Format tiền tệ linh hoạt
+  const formatMoney = (amount: number) => {
+    if (IS_MOCK_MODE) return mockFormatCurrency(amount);
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  };
 
   if (!project) {
     return (
@@ -25,26 +46,54 @@ export default function ReviewDetail({ project, currentUser, onNavigate, onLogou
     );
   }
 
-  const handleApprove = () => {
+  // 1. Logic Phê Duyệt
+  const handleApprove = async () => {
     setLoading(true);
-    setTimeout(() => {
-      toast.success('Dự án đã được phê duyệt!');
+    try {
+      if (IS_MOCK_MODE) {
+        // Mock
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        toast.success('Dự án đã được phê duyệt (Mock)!');
+        onNavigate('review-projects');
+      } else {
+        // Real API
+        await projectAPI.approveProject(project.id, feedback || "Duyệt bởi CVA");
+        toast.success('Dự án đã được phê duyệt thành công!');
+        onNavigate('review-projects');
+      }
+    } catch (error) {
+      toast.error('Lỗi khi phê duyệt dự án');
+      console.error(error);
+    } finally {
       setLoading(false);
-      onNavigate('review-projects');
-    }, 1000);
+    }
   };
 
-  const handleReject = () => {
+  // 2. Logic Từ Chối
+  const handleReject = async () => {
     if (!feedback.trim()) {
       toast.error('Vui lòng nhập lý do từ chối!');
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      toast.success('Dự án đã bị từ chối. Phản hồi đã được gửi đến Startup.');
+    try {
+      if (IS_MOCK_MODE) {
+        // Mock
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        toast.success('Dự án đã bị từ chối (Mock).');
+        onNavigate('review-projects');
+      } else {
+        // Real API
+        await projectAPI.rejectProject(project.id, feedback);
+        toast.success('Dự án đã bị từ chối thành công.');
+        onNavigate('review-projects');
+      }
+    } catch (error) {
+      toast.error('Lỗi khi từ chối dự án');
+      console.error(error);
+    } finally {
       setLoading(false);
-      onNavigate('review-projects');
-    }, 1000);
+    }
   };
 
   return (
@@ -68,10 +117,22 @@ export default function ReviewDetail({ project, currentUser, onNavigate, onLogou
                 <div className="flex items-center gap-3 mb-6">
                   <Badge className="bg-yellow-500/90">Chờ duyệt</Badge>
                   <h1 className="text-3xl text-white">{project.title}</h1>
+                  {IS_MOCK_MODE && <span className="text-xs bg-yellow-500 text-black px-2 py-1 rounded font-bold">MOCK</span>}
                 </div>
 
                 <div className="aspect-video rounded-xl overflow-hidden mb-6">
-                  <img src={project.image} alt={project.title} className="w-full h-full object-cover" />
+                  {/* Xử lý ảnh */}
+                  {project.image || project.imageUrl ? (
+                      <img 
+                        src={project.image || `http://localhost:8080${project.imageUrl}`} 
+                        alt={project.title} 
+                        className="w-full h-full object-cover" 
+                        // Fix lỗi 'src does not exist on EventTarget' bằng e.currentTarget
+                        onError={(e) => {e.currentTarget.src = 'https://via.placeholder.com/800x400?text=No+Image'}}
+                      />
+                  ) : (
+                      <div className="w-full h-full bg-gray-700 flex items-center justify-center text-white">No Image</div>
+                  )}
                 </div>
 
                 <div className="space-y-6">
@@ -88,9 +149,9 @@ export default function ReviewDetail({ project, currentUser, onNavigate, onLogou
                   <div>
                     <h3 className="text-white text-xl mb-3">Tags</h3>
                     <div className="flex flex-wrap gap-2">
-                      {project.tags.map((tag, index) => (
+                      {(project.tags || []).map((tag: any, index: number) => ( // Thêm type any cho tag
                         <Badge key={index} variant="outline" className="border-white/20 text-white">
-                          {tag}
+                          {typeof tag === 'string' ? tag : tag.tagName}
                         </Badge>
                       ))}
                     </div>
@@ -99,9 +160,9 @@ export default function ReviewDetail({ project, currentUser, onNavigate, onLogou
                   <div>
                     <h3 className="text-white text-xl mb-3">Thông tin Startup</h3>
                     <div className="p-4 bg-white/5 rounded-lg">
-                      <p className="text-white">Tên: {project.startupName}</p>
-                      <p className="text-white/70">Người đại diện: {project.founderName}</p>
-                      <p className="text-white/70">Email: {project.founderEmail}</p>
+                      <p className="text-white">Tên: {project.startupName || project.founder?.company || 'N/A'}</p>
+                      <p className="text-white/70">Người đại diện: {project.founderName || project.founder?.name}</p>
+                      <p className="text-white/70">Email: {project.founderEmail || project.founder?.email}</p>
                     </div>
                   </div>
                 </div>
@@ -135,7 +196,7 @@ export default function ReviewDetail({ project, currentUser, onNavigate, onLogou
 
                   <div>
                     <p className="text-white/70 text-sm mb-1">Mục tiêu gọi vốn</p>
-                    <p className="text-2xl text-white">{formatCurrency(project.targetAmount)}</p>
+                    <p className="text-2xl text-white">{formatMoney(project.targetAmount)}</p>
                   </div>
 
                   <div>
@@ -162,7 +223,7 @@ export default function ReviewDetail({ project, currentUser, onNavigate, onLogou
                     className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-6"
                   >
                     <CheckCircle className="w-5 h-5 mr-2" />
-                    Phê duyệt dự án
+                    {loading ? 'Đang xử lý...' : 'Phê duyệt dự án'}
                   </Button>
 
                   <Button

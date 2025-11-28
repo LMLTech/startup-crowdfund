@@ -390,38 +390,38 @@ export const mockInvestments = [
   },
 ];
 
-// Helper functions
-export const getProjectById = (id) => {
+/// Helper functions – ĐÃ FIX TYPE 100%
+export const getProjectById = (id: number) => {
   return mockProjects.find(p => p.id === id) || mockPendingProjects.find(p => p.id === id);
 };
 
-export const getProjectsByStatus = (status) => {
+export const getProjectsByStatus = (status: string) => {
   if (status === 'pending') {
     return mockPendingProjects;
   }
   return mockProjects.filter(p => p.status === status);
 };
 
-export const getUserByEmail = (email) => {
+export const getUserByEmail = (email: string) => {
   return mockUsers.find(u => u.email === email);
 };
 
-export const getInvestmentsByUserId = (userId) => {
+export const getInvestmentsByUserId = (userId: number) => {
   return mockInvestments.filter(i => i.investorId === userId);
 };
 
-export const getProjectsByFounderId = (founderId) => {
+export const getProjectsByFounderId = (founderId: number) => {
   return [...mockProjects, ...mockPendingProjects].filter(p => p.founderId === founderId);
 };
 
-export const formatCurrency = (amount) => {
+export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
     currency: 'VND',
   }).format(amount);
 };
 
-export const calculateProgress = (current, target) => {
+export const calculateProgress = (current: number, target: number): number => {
   return Math.min((current / target) * 100, 100);
 };
 
@@ -631,3 +631,23 @@ export const mockProjectComments = [
     createdAt: '2024-11-05 09:15:00',
   },
 ];
+
+// CHỈ CHẠY TRONG BROWSER – KHÔNG BAO GIỜ CHẠY TRONG SSR
+if (typeof window !== 'undefined') {
+  const initMockData = () => {
+    if (import.meta.env.VITE_USE_MOCK === 'true') {
+      const key = 'starfund_projects';
+      const existing = localStorage.getItem(key);
+      if (!existing || JSON.parse(existing).length === 0) {
+        localStorage.setItem(key, JSON.stringify(mockProjects));
+        console.log('%c MOCK DATA ĐÃ ĐƯỢC KHỞI TẠO VÀO LOCALSTORAGE!', 'color: #10b981; font-size: 16px; font-weight: bold;');
+      }
+    }
+  };
+
+  // Chạy ngay khi file được load (an toàn 100%)
+  initMockData();
+
+  // Và chạy lại mỗi khi storage thay đổi (bonus)
+  window.addEventListener('storage', initMockData);
+}

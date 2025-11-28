@@ -5,7 +5,30 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { toast } from 'sonner';
 
-export default function BlogDetailPage({ post, currentUser, onNavigate, onLogout }) {
+// Định nghĩa type cho bài viết blog
+interface BlogPost {
+  id?: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  category: string;
+  author: string;
+  authorBio?: string;
+  publishedAt: string | Date;
+  readTime: number;
+  image: string;
+  tags: string[];
+}
+
+// Định nghĩa props của page
+interface BlogDetailPageProps {
+  post: BlogPost | null;
+  currentUser: any;
+  onNavigate: (path: string) => void;
+  onLogout: () => void;
+}
+
+export default function BlogDetailPage({ post, currentUser, onNavigate, onLogout }: BlogDetailPageProps) {
   if (!post) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -19,7 +42,8 @@ export default function BlogDetailPage({ post, currentUser, onNavigate, onLogout
     );
   }
 
-  const handleShare = (platform) => {
+  // Fix lỗi: thêm type cho platform
+  const handleShare = (platform: 'Facebook' | 'Twitter' | 'LinkedIn') => {
     toast.success(`Đã sao chép link chia sẻ lên ${platform}!`);
   };
 
@@ -69,7 +93,7 @@ export default function BlogDetailPage({ post, currentUser, onNavigate, onLogout
 
             {/* Tags */}
             <div className="flex flex-wrap gap-2">
-              {post.tags.map((tag, index) => (
+              {post.tags.map((tag: string, index: number) => (
                 <Badge key={index} variant="outline" className="border-white/20 text-white/70">
                   <Tag className="w-3 h-3 mr-1" />
                   {tag}
@@ -95,7 +119,7 @@ export default function BlogDetailPage({ post, currentUser, onNavigate, onLogout
               </p>
               
               <div className="text-white/80 space-y-4 leading-relaxed">
-                {post.content.split('\n\n').map((paragraph, index) => (
+                {post.content.split('\n\n').map((paragraph: string, index: number) => (
                   <p key={index}>{paragraph}</p>
                 ))}
               </div>

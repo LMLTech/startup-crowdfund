@@ -1,24 +1,37 @@
+import React from 'react';
 import { Rocket, Facebook, Twitter, Linkedin, Instagram, Mail, Phone, MapPin } from 'lucide-react';
 
-export default function Footer({ onNavigate }) {
+// 1. Interface từ File 1 (Để code chặt chẽ)
+interface FooterProps {
+  onNavigate: (path: string) => void;
+}
+
+export default function Footer({ onNavigate }: FooterProps) {
   const currentYear = new Date().getFullYear();
 
+  // --- GIAO DIỆN (UI TỪ FILE 2) ---
   return (
-    <footer className="relative bg-black/40 backdrop-blur-xl border-t border-white/10 mt-20">
-      <div className="container mx-auto px-4 py-12">
+    <footer className="relative bg-black/40 backdrop-blur-xl border-t border-white/10 mt-20 px-10">
+      {/* Layout w-4/5 từ File 2 */}
+      <div className="w-4/5 mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+          
           {/* Brand & Description */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg">
-                <Rocket className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white text-xl bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                StarFund
-              </span>
+            <div
+              className="flex items-center gap-2 cursor-pointer group"
+              onClick={() => onNavigate("home")}
+            >
+              {/* SỬ DỤNG ẢNH TỪ ASSETS NHƯ YÊU CẦU */}
+              <img
+                src="/assets/logo.png"
+                alt="TreFund Logo"
+                className="h-20 w-auto group-hover:scale-110 transition-transform -mt-7"
+              />
             </div>
-            <p className="text-white/70 text-sm">
-              Nền tảng gọi vốn cộng đồng hàng đầu Việt Nam, kết nối nhà đầu tư với các startup tiềm năng.
+            <p className="text-white/70 text-sm font-semibold">
+              Nền tảng gọi vốn cộng đồng hàng đầu Việt Nam, kết nối nhà đầu tư
+              với các Startup tiềm năng.
             </p>
             <div className="flex gap-3">
               <a
@@ -54,11 +67,11 @@ export default function Footer({ onNavigate }) {
 
           {/* Quick Links */}
           <div>
-            <h3 className="text-white mb-4">Liên kết nhanh</h3>
+            <h3 className="text-white mb-4 font-semibold">Liên kết nhanh</h3>
             <ul className="space-y-2">
               <li>
                 <button
-                  onClick={() => onNavigate('home')}
+                  onClick={() => onNavigate("home")}
                   className="text-white/70 hover:text-white transition-colors text-sm"
                 >
                   Trang chủ
@@ -66,7 +79,7 @@ export default function Footer({ onNavigate }) {
               </li>
               <li>
                 <button
-                  onClick={() => onNavigate('explore')}
+                  onClick={() => onNavigate("explore")}
                   className="text-white/70 hover:text-white transition-colors text-sm"
                 >
                   Khám phá dự án
@@ -74,7 +87,7 @@ export default function Footer({ onNavigate }) {
               </li>
               <li>
                 <button
-                  onClick={() => onNavigate('about')}
+                  onClick={() => onNavigate("about")}
                   className="text-white/70 hover:text-white transition-colors text-sm"
                 >
                   Giới thiệu
@@ -82,7 +95,7 @@ export default function Footer({ onNavigate }) {
               </li>
               <li>
                 <button
-                  onClick={() => onNavigate('blog')}
+                  onClick={() => onNavigate("blog")}
                   className="text-white/70 hover:text-white transition-colors text-sm"
                 >
                   Blog
@@ -93,11 +106,11 @@ export default function Footer({ onNavigate }) {
 
           {/* Support */}
           <div>
-            <h3 className="text-white mb-4">Hỗ trợ</h3>
+            <h3 className="text-white mb-4 font-semibold">Hỗ trợ</h3>
             <ul className="space-y-2">
               <li>
                 <button
-                  onClick={() => onNavigate('faq')}
+                  onClick={() => onNavigate("faq")}
                   className="text-white/70 hover:text-white transition-colors text-sm"
                 >
                   Câu hỏi thường gặp
@@ -105,7 +118,7 @@ export default function Footer({ onNavigate }) {
               </li>
               <li>
                 <button
-                  onClick={() => onNavigate('contact')}
+                  onClick={() => onNavigate("contact")}
                   className="text-white/70 hover:text-white transition-colors text-sm"
                 >
                   Liên hệ
@@ -117,16 +130,16 @@ export default function Footer({ onNavigate }) {
                 </button>
               </li>
               <li>
-                <button className="text-white/70 hover:text-white transition-colors text-sm">
+                <button className="text-white/70 hover:text-white transition-colors text-sm font-semibold">
                   Chính sách bảo mật
                 </button>
               </li>
             </ul>
           </div>
 
-          {/* Contact Info */}
+          {/* Contact Info - Dữ liệu từ File 1, Style File 2 */}
           <div>
-            <h3 className="text-white mb-4">Thông tin liên hệ</h3>
+            <h3 className="text-white mb-4 font-semibold">Thông tin liên hệ</h3>
             <ul className="space-y-3">
               <li className="flex items-start gap-2 text-white/70 text-sm">
                 <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -134,14 +147,20 @@ export default function Footer({ onNavigate }) {
               </li>
               <li className="flex items-center gap-2 text-white/70 text-sm">
                 <Phone className="w-4 h-4 flex-shrink-0" />
-                <a href="tel:+84123456789" className="hover:text-white transition-colors">
+                <a
+                  href="tel:+84123456789"
+                  className="hover:text-white transition-colors"
+                >
                   +84 123 456 789
                 </a>
               </li>
               <li className="flex items-center gap-2 text-white/70 text-sm">
                 <Mail className="w-4 h-4 flex-shrink-0" />
-                <a href="mailto:contact@starfund.vn" className="hover:text-white transition-colors">
-                  contact@starfund.vn
+                <a
+                  href="mailto:nhom12@trefund.vn"
+                  className="hover:text-white transition-colors"
+                >
+                  nhom12@trefund.vn
                 </a>
               </li>
             </ul>
@@ -152,10 +171,10 @@ export default function Footer({ onNavigate }) {
         <div className="pt-8 border-t border-white/10">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-white/60 text-sm">
-              © {currentYear} StarFund. All rights reserved.
+              © {currentYear} TreFund. All rights reserved.
             </p>
             <p className="text-white/60 text-sm">
-              Được xây dựng với ❤️ tại Việt Nam
+              Được xây dựng bởi Nhóm 12 ❤️
             </p>
           </div>
         </div>
