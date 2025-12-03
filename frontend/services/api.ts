@@ -6,13 +6,13 @@ let mockPendingProjects: any[] = [];
 let mockProjects: any[] = [];
 let mockUsers: any[] = [];
 
-// ==================== MOCK MODE SWITCH - CHỈ THÊM ĐOẠN NÀY ====================
+// ==================== MOCK MODE SWITCH ====================
 const USE_MOCK = (() => {
   const val = import.meta.env.VITE_USE_MOCK;
   return (typeof val === 'boolean' && val) || (typeof val === 'string' && val.trim().toLowerCase() === 'true');
 })();
 
-// FIX MOCK DATA LOADING - CHỈ THÊM ĐOẠN NÀY
+// FIX MOCK DATA LOADING
 let mockDataPromise: Promise<any> | null = null;
 if (USE_MOCK) {
   mockDataPromise = import('../utils/mockData').then(module => {
@@ -29,7 +29,7 @@ const awaitMockData = async () => {
 
 const delay = (ms = 500) => new Promise(r => setTimeout(r, ms));
 
-// API Service Layer - Đã sửa khớp với Backend StarFund
+// API Service Layer
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
 // Helper function to get auth token
@@ -37,8 +37,6 @@ const getAuthToken = (): string | null => {
   const user = localStorage.getItem('user');
   if (user) {
     const userData = JSON.parse(user);
-    // Backend trả về token nằm cùng cấp với user trong object login response, 
-    // hoặc bạn đã lưu riêng key 'token' ở useAuth.
     return localStorage.getItem('token') || userData.token;
   }
   return null;
@@ -68,7 +66,6 @@ const createHeaders = (includeAuth = true, isMultipart = false): HeadersInit => 
 const handleResponse = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-    // Nếu lỗi 401 (Unauthorized) -> Token hết hạn -> Clear storage & Redirect
     if (response.status === 401) {
         localStorage.removeItem('user');
         localStorage.removeItem('token');
@@ -83,7 +80,7 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
 };
 
 // ============================================
-// DEFINITIONS (Interfaces) - PHẦN BẠN ĐANG THIẾU
+// DEFINITIONS (Interfaces)
 // ============================================
 
 export interface LoginRequest {
@@ -123,7 +120,7 @@ export interface Project {
   daysLeft: number;
   status: string;
   image: string;
-  imageUrl?: string; // Support real API url
+  imageUrl?: string; 
   tags?: any[];
   milestones?: any[];
   startupName?: string;
@@ -146,8 +143,8 @@ export interface Investment {
   paymentMethod: string;
   createdAt: string;
   transactionCode?: string;
-  transactionId?: string; // Support mock
-  projectTitle?: string; // Support mock
+  transactionId?: string; 
+  projectTitle?: string; 
   project?: {
       id: number;
       title: string;
@@ -212,13 +209,11 @@ export const authAPI = {
     return handleResponse<AuthResponse>(response);
   },
 
-  // THÊM VÀO TRONG authAPI (ngay dưới login hoặc getCurrentUser)
   register: async (data: RegisterRequest) => {
     if (USE_MOCK) {
       await awaitMockData();
       await delay(800);
       
-      // Mock register
       const safeUser = {
         id: Date.now(),
         email: data.email,
@@ -236,7 +231,6 @@ export const authAPI = {
       return { user: safeUser, token: 'mock-jwt-register-' + Date.now() };
     }
 
-    // GỌI THẬT TỚI BACKEND
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: {
@@ -255,116 +249,107 @@ export const authAPI = {
 // ============================================
 export const projectAPI = {
   // Public: Get Approved Projects
-// Thay thế hàm getApprovedProjects trong projectAPI
+  getApprovedProjects: async (page = 1, limit = 12, search = '', category = '') => {
+    if (USE_MOCK) {
+      await awaitMockData();
+      await delay(600);
+      let projects = mockProjects.filter(p => p.status === 'approved');
+      if (search) {
+        projects = projects.filter(p =>
+          p.title.toLowerCase().includes(search.toLowerCase()) ||
+          p.description.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+      if (category && category !== 'all') {
+        projects = projects.filter(p => p.category === category);
+      }
+      const start = (page - 1) * limit;
+      const end = start + limit;
+      
+      return {
+        data: projects.slice(start, end),
+        pagination: {
+          total: projects.length,
+          page,
+          limit,
+          totalPages: Math.ceil(projects.length / limit)
+        }
+      };
+    }
 
-getApprovedProjects: async (page = 1, limit = 12, search = '', category = '') => {
-  if (USE_MOCK) {
-    await awaitMockData();
-    await delay(600);
-    let projects = mockProjects.filter(p => p.status === 'approved');
-    if (search) {
-      projects = projects.filter(p =>
-        p.title.toLowerCase().includes(search.toLowerCase()) ||
-        p.description.toLowerCase().includes(search.toLowerCase())
-      );
-    }
-    if (category && category !== 'all') {
-      projects = projects.filter(p => p.category === category);
-    }
-    const start = (page - 1) * limit;
-    const end = start + limit;
+    // REAL API
+    let url = `${API_BASE_URL}/projects?status=approved&page=${page}&limit=${limit}`;
+    if(search) url += `&search=${encodeURIComponent(search)}`;
+    if(category && category !== 'all') url += `&category=${encodeURIComponent(category)}`;
     
-    // Trả về format giống backend
-    return {
-      data: projects.slice(start, end),
-      pagination: {
-        total: projects.length,
-        page,
-        limit,
-        totalPages: Math.ceil(projects.length / limit)
-      }
-    };
-  }
-
-  // REAL API
-  let url = `${API_BASE_URL}/projects?status=approved&page=${page}&limit=${limit}`;
-  if(search) url += `&search=${encodeURIComponent(search)}`;
-  if(category && category !== 'all') url += `&category=${encodeURIComponent(category)}`;
-  
-  const response = await fetch(url, { headers: createHeaders(false) });
-  const result = await handleResponse<any>(response);
-  
-  // FIX: Backend trả về Page object, extract content array
-  // result có thể là: { content: [...], totalElements, totalPages } 
-  // hoặc trực tiếp array (nếu backend trả khác)
-  
-  if (result && result.content && Array.isArray(result.content)) {
-    // Spring Page format
-    return {
-      data: result.content,
-      pagination: {
-        total: result.totalElements || result.content.length,
-        page: result.number + 1 || page, // Spring Page index bắt đầu từ 0
-        limit: result.size || limit,
-        totalPages: result.totalPages || 1
-      }
-    };
-  } else if (Array.isArray(result)) {
-    // Nếu backend trả trực tiếp array
-    return {
-      data: result,
-      pagination: { total: result.length, page, limit, totalPages: 1 }
-    };
-  } else {
-    // Fallback
-    console.warn('Unexpected API response format:', result);
-    return { data: [], pagination: null };
-  }
-},
+    const response = await fetch(url, { headers: createHeaders(false) });
+    const result = await handleResponse<any>(response);
+    
+    if (result && result.content && Array.isArray(result.content)) {
+      // Spring Page format
+      return {
+        data: result.content,
+        pagination: {
+          total: result.totalElements || result.content.length,
+          page: result.number + 1 || page, 
+          limit: result.size || limit,
+          totalPages: result.totalPages || 1
+        }
+      };
+    } else if (Array.isArray(result)) {
+      return {
+        data: result,
+        pagination: { total: result.length, page, limit, totalPages: 1 }
+      };
+    } else {
+      console.warn('Unexpected API response format:', result);
+      return { data: [], pagination: null };
+    }
+  },
 
   // Detail
   getProjectById: async (id: number) => {
-  if (USE_MOCK) {
-    await awaitMockData();
-    await delay(500);
-    const project = [...mockProjects, ...mockPendingProjects].find(p => p.id === id);
-    if (!project) throw new Error('Không tìm thấy dự án');
-    return project;
-  }
-  const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
-    headers: createHeaders(false),
-  });
-  return handleResponse<Project>(response);
-},
-getProjectsByStatus: async (status: string, page = 1, limit = 12) => {
-  if (USE_MOCK) {
-    await awaitMockData();
-    await delay(600);
-    
-    // Lọc theo status (chuyển về lowercase để so sánh)
-    let projects = status.toLowerCase() === 'pending' 
-      ? mockPendingProjects 
-      : mockProjects.filter(p => p.status?.toLowerCase() === status.toLowerCase());
-    
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    
-    return {
-      content: projects.slice(start, end),
-      totalElements: projects.length,
-      totalPages: Math.ceil(projects.length / limit),
-      currentPage: page
-    };
-  }
+    if (USE_MOCK) {
+      await awaitMockData();
+      await delay(500);
+      const project = [...mockProjects, ...mockPendingProjects].find(p => p.id === id);
+      if (!project) throw new Error('Không tìm thấy dự án');
+      return project;
+    }
+    const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
+      headers: createHeaders(false),
+    });
+    return handleResponse<Project>(response);
+  },
 
-  // GỌI API THẬT
-  const response = await fetch(
-    `${API_BASE_URL}/projects?status=${status}&page=${page}&limit=${limit}`, 
-    { headers: createHeaders(true) } // TRUE vì cần auth
-  );
-  
-  return handleResponse<any>(response);
-},
+  getProjectsByStatus: async (status: string, page = 1, limit = 12) => {
+    if (USE_MOCK) {
+      await awaitMockData();
+      await delay(600);
+      
+      let projects = status.toLowerCase() === 'pending' 
+        ? mockPendingProjects 
+        : mockProjects.filter(p => p.status?.toLowerCase() === status.toLowerCase());
+      
+      const start = (page - 1) * limit;
+      const end = start + limit;
+      
+      return {
+        content: projects.slice(start, end),
+        totalElements: projects.length,
+        totalPages: Math.ceil(projects.length / limit),
+        currentPage: page
+      };
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/projects?status=${status}&page=${page}&limit=${limit}`, 
+      { headers: createHeaders(true) }
+    );
+    
+    return handleResponse<any>(response);
+  },
+
   // Startup: Get My Projects
   getMyProjects: async () => {
     const response = await fetch(`${API_BASE_URL}/projects/my-projects`, {
@@ -373,11 +358,11 @@ getProjectsByStatus: async (status: string, page = 1, limit = 12) => {
     return handleResponse<Project[]>(response);
   },
 
-  // Create (Multipart Form Data)
+  // Create
   createProject: async (formData: FormData) => {
     const response = await fetch(`${API_BASE_URL}/projects`, {
       method: 'POST',
-      headers: createHeaders(true, true), // isMultipart = true
+      headers: createHeaders(true, true),
       body: formData,
     });
     return handleResponse<Project>(response);
@@ -393,7 +378,7 @@ getProjectsByStatus: async (status: string, page = 1, limit = 12) => {
     return handleResponse<Project>(response);
   },
 
-  // Approve (CVA)
+  // Approve
   approveProject: async (id: number, feedback: string) => {
     const response = await fetch(`${API_BASE_URL}/cva/projects/${id}/approve`, {
       method: 'POST',
@@ -403,7 +388,7 @@ getProjectsByStatus: async (status: string, page = 1, limit = 12) => {
     return handleResponse<Project>(response);
   },
 
-  // Reject (CVA)
+  // Reject
   rejectProject: async (id: number, feedback: string) => {
     const response = await fetch(`${API_BASE_URL}/cva/projects/${id}/reject`, {
       method: 'POST',
@@ -433,10 +418,8 @@ export const investmentAPI = {
       headers: createHeaders(),
       body: JSON.stringify(data),
     });
-    // Return format: { paymentUrl: "..." }
-    return handleResponse<{
-      data: any;paymentUrl: string
-}>(response);
+    // FIX: Sửa lại format return type cho đúng cú pháp TS
+    return handleResponse<{ paymentUrl: string }>(response);
   },
 
   // Investor: Get My History
@@ -465,7 +448,7 @@ export const transactionAPI = {
     if (userId) url += `&userId=${userId}`;
     
     const response = await fetch(url, { headers: createHeaders() });
-    return handleResponse<any>(response); // Return Page<Transaction>
+    return handleResponse<any>(response); 
   },
 };
 
@@ -478,7 +461,7 @@ export const userAPI = {
     if (role) url += `&role=${role}`;
 
     const response = await fetch(url, { headers: createHeaders() });
-    return handleResponse<any>(response); // Return Page<User>
+    return handleResponse<any>(response);
   },
 
   updateUserStatus: async (id: number, status: string) => {
@@ -524,7 +507,6 @@ export const statisticsAPI = {
   },
 };
 
-// notificationAPI.ts
 // ============================================
 // NOTIFICATION APIs
 // ============================================
@@ -559,7 +541,7 @@ export default {
   transaction: transactionAPI,
   user: userAPI,
   statistics: statisticsAPI,
-  notification: notificationAPI, // <-- thêm dòng này
+  notification: notificationAPI,
 };
 
 // fileUrl helper
@@ -567,19 +549,3 @@ export const getFileUrl = (fileName: string) => {
   if (!fileName) return '';
   return `${API_BASE_URL}/uploads/${fileName}`;
 };
-
-export interface Project {
-  id: number;
-  title: string;
-  description: string;
-  fullDescription?: string;
-  category: string;
-  targetAmount: number;
-  currentAmount: number;
-  investorCount: number;
-  daysLeft: number;
-  status: string;
-  image: string;       // file name từ backend
-  imageUrl?: string;   // URL đầy đủ
-}
-

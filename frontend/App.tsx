@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Toaster } from './components/ui/sonner';
-import SpaceBackground from './components/SpaceBackground';
+import SpaceBackground from './components/SpaceBackground2';
 
 // Public Pages
 import HomePage from './pages/public/HomePage';

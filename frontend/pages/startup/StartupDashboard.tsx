@@ -129,7 +129,7 @@ export default function StartupDashboard({ currentUser, onNavigate, onLogout }: 
           
           {/* Welcome Section */}
           <div className="mb-12">
-            <h1 className="text-xl font-semibold text-white mb-2">
+            <h1 className="text-xl font-semibold text-white mb-2 mt-4">
               Xin chào, {currentUser?.name || 'Startup'}! 🚀
               {IS_MOCK_MODE && <span className="ml-4 text-xs bg-yellow-500 text-black px-2 py-1 rounded font-bold">MOCK</span>}
             </h1>
